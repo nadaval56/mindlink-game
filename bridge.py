@@ -61,10 +61,13 @@ def _parse_payload(payload: bytes) -> None:
             if code == 0x02:      # POOR_SIGNAL
                 state["signal"]    = val
                 state["connected"] = (val < 200)
+                log.info("Signal quality: %d (%s)", val, "GOOD" if val == 0 else "POOR" if val == 200 else "OK")
             elif code == 0x04:    # ATTENTION
                 state["attention"] = val
+                log.info("Attention: %d", val)
             elif code == 0x05:    # MEDITATION
                 state["meditation"] = val
+                log.info("Meditation: %d", val)
             elif code == 0x16:    # BLINK_STRENGTH
                 _blink_latch = val
                 log.info("Blink detected: strength=%d", val)
