@@ -126,20 +126,31 @@ def _find_port():
 
 # ── serial reader ─────────────────────────────────────────────────────────────
 
-async def serial_reader(port: str) -> None:
+async def serial_reader(port: str, baud: int) -> None:
     import serial as ser_mod
     loop = asyncio.get_event_loop()
-    log.info("Opening %s at 57600 baud...", port)
+    log.info("Opening %s at %d baud...", port, baud)
 
     def _blocking():
         nonlocal buf
-        s = ser_mod.Serial(port, baudrate=57600, timeout=1)
-        log.info("Connected to Mind Link on %s", port)
+        s = ser_mod.Serial(port, baudrate=baud, timeout=1)
+        log.info("Port opened. Waiting for ThinkGear sync bytes (0xAA 0xAA)...")
         state["connected"] = True
         buf = bytearray()
+        bytes_seen = 0
+        sync_found = False
         while True:
             chunk = s.read(256)
             if chunk:
+                bytes_seen += len(chunk)
+                if not sync_found and bytes_seen <= 512:
+                    # show first bytes to help debug baud rate
+                    log.info("RAW bytes: %s", chunk[:16].hex())
+                if not sync_found and SYNC in chunk and bytes_seen < 1024:
+                    idx = chunk.find(bytes([SYNC, SYNC]))
+                    if idx >= 0:
+                        sync_found = True
+                        log.info("Sync found! ThinkGear packets detected.")
                 buf.extend(chunk)
                 buf = _process_buf(buf)
 
@@ -190,13 +201,13 @@ async def _broadcast_loop(demo: bool) -> None:
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-async def main(port, force_demo: bool) -> None:
+async def main(port, baud: int, force_demo: bool) -> None:
     demo = force_demo
 
     if not force_demo:
         target = port or _find_port()
         if target:
-            asyncio.create_task(_serial_task(target))
+            asyncio.create_task(_serial_task(target, baud))
         else:
             log.info("No serial port found — Demo mode")
             demo = True
@@ -209,10 +220,10 @@ async def main(port, force_demo: bool) -> None:
         await _broadcast_loop(demo)
 
 
-async def _serial_task(port: str) -> None:
+async def _serial_task(port: str, baud: int) -> None:
     while True:
         try:
-            await serial_reader(port)
+            await serial_reader(port, baud)
         except Exception as e:
             log.warning("Serial error: %s — retrying in 5s", e)
             state["connected"] = False
@@ -222,9 +233,11 @@ async def _serial_task(port: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MindLink EEG→WebSocket bridge")
     parser.add_argument("--port", help="Serial port, e.g. COM6 or /dev/rfcomm0")
+    parser.add_argument("--baud", type=int, default=57600,
+                        help="Baud rate (default 57600, try also 9600 or 115200)")
     parser.add_argument("--demo", action="store_true", help="Force demo mode")
     args = parser.parse_args()
     try:
-        asyncio.run(main(args.port, args.demo))
+        asyncio.run(main(args.port, args.baud, args.demo))
     except KeyboardInterrupt:
         log.info("Stopped.")
