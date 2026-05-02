@@ -189,7 +189,7 @@ async def serial_reader(port: str) -> None:
             buf = buf[4+plen:]
 
 
-def _auto_detect_port() -> str | None:
+def _auto_detect_port():
     """Try to find a Mind Link serial port automatically."""
     import glob
     candidates = (
@@ -265,7 +265,7 @@ async def _ws_handler(ws) -> None:
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
-async def main(port: str | None, force_demo: bool) -> None:
+async def main(port, force_demo: bool) -> None:
     demo = force_demo
 
     async def _start_eeg():
