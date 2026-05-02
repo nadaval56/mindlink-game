@@ -267,10 +267,12 @@ connectWS();
 // ── game state ────────────────────────────────────────────────────────────
 let gameState = 'connect'; // 'connect' | 'ready' | 'playing' | 'gameover'
 let score = 0;
-let speed = 5;
+let speed = 1.5;
 let maxAttention = 0;
 let blinksUsed = 0;
 let frameCount = 0;
+let lives = 3;
+let invincible = 0; // ms timestamp until invincibility expires
 
 // player
 const player = {
@@ -315,21 +317,27 @@ function goToReady() {
 function startGame() {
   gameState = 'playing';
   showScreen(null); // hide all screens
-  score = 0; speed = 5; maxAttention = 0; blinksUsed = 0; frameCount = 0;
+  score = 0; speed = 1.5; maxAttention = 0; blinksUsed = 0; frameCount = 0;
+  lives = 3; invincible = 0;
   player.y = GROUND_Y; player.vy = 0; player.isJumping = false;
   player.jumpCooldown = 0; player.trailFrames = [];
-  obstacles = []; nextObstacleIn = 90;
+  obstacles = []; nextObstacleIn = 150;
   particles = []; shakeDur = 0;
   blinkCooldown = 0;
 }
 
-function endGame() {
-  gameState = 'gameover';
-  document.getElementById('go-score').textContent = String(score).padStart(5,'0');
-  document.getElementById('go-max-att').textContent = maxAttention;
-  document.getElementById('go-blinks').textContent = blinksUsed;
-  showScreen('gameover');
+function loseLife() {
+  lives--;
   triggerShake();
+  triggerBlinkFlash();
+  invincible = performance.now() + 2000; // 2s invincibility
+  if (lives <= 0) {
+    gameState = 'gameover';
+    document.getElementById('go-score').textContent = String(score).padStart(5,'0');
+    document.getElementById('go-max-att').textContent = maxAttention;
+    document.getElementById('go-blinks').textContent = blinksUsed;
+    showScreen('gameover');
+  }
 }
 
 // ── ready screen updater ──────────────────────────────────────────────────
@@ -479,6 +487,15 @@ function drawHUD() {
   ctx.textAlign = 'center';
   ctx.fillText('SCORE: ' + String(score).padStart(5,'0'), W/2, 28);
 
+  // ── lives ──
+  ctx.font = '14px "Press Start 2P"';
+  ctx.textAlign = 'left';
+  const heartStr = '♥'.repeat(lives) + '♡'.repeat(3 - lives);
+  ctx.fillStyle = performance.now() < invincible
+    ? (Math.floor(performance.now() / 100) % 2 === 0 ? '#ff4444' : '#ffffff44')
+    : '#ff4444';
+  ctx.fillText(heartStr, 16, 28);
+
   // ── attention bar (bottom left) ──
   const barX = 16, barY = H - 42, barW = 200, barH = 18;
   // background
@@ -622,8 +639,8 @@ function gameLoop(ts) {
   const att = eeg.attention;
   if (att > maxAttention) maxAttention = att;
 
-  // speed increase
-  speed = Math.min(12, 5 + Math.floor(score / 500) * 0.1);
+  // speed: starts at 1.5, caps at 6, increases every 300pts
+  speed = Math.min(6, 1.5 + Math.floor(score / 300) * 0.15);
   score += 1;
 
   // player Y target based on attention
@@ -633,7 +650,7 @@ function gameLoop(ts) {
 
   // jump
   const now = performance.now();
-  if (eeg.blink > 30 && now > blinkCooldown) {
+  if (eeg.blink > 20 && now > blinkCooldown) {
     // consume blink
     eeg.blink = 0;
     player.vy = -18;
@@ -668,10 +685,10 @@ function gameLoop(ts) {
     const isHigh = Math.random() < 0.3; // 30% chance tall wall
     if (isHigh) {
       obstacles.push({ type: 'high', x: W, w: 30, h: 120 });
-      nextObstacleIn = Math.round((6 + Math.random() * 4) * 60);
+      nextObstacleIn = Math.round((12 + Math.random() * 8) * 60);
     } else {
       obstacles.push({ type: 'low', x: W, w: 35, h: 45 });
-      nextObstacleIn = Math.round((2.5 + Math.random() * 1.5) * 60);
+      nextObstacleIn = Math.round((5 + Math.random() * 3) * 60);
     }
   }
 
@@ -684,7 +701,7 @@ function gameLoop(ts) {
       o.passed = true;
       passed.push(o);
     }
-    if (checkCollision(o)) { collided = true; }
+    if (now > invincible && checkCollision(o)) { collided = true; }
     return o.x + o.w > -10;
   });
 
@@ -696,7 +713,7 @@ function gameLoop(ts) {
   drawHUD();
 
   if (collided) {
-    endGame();
+    loseLife();
   }
 
   lastTime = ts;

@@ -274,12 +274,15 @@ async def main(port, force_demo: bool) -> None:
             log.info("Demo mode forced via --demo")
             return
 
-        # Try TGC first
+        # Try TGC first — only the initial connection has a timeout,
+        # once connected the reader runs until it drops
         try:
-            await asyncio.wait_for(tgc_reader(), timeout=5)
-            return
+            await asyncio.wait_for(asyncio.open_connection(TGC_HOST, TGC_PORT), timeout=5)
         except (ConnectionRefusedError, asyncio.TimeoutError, OSError):
             log.info("TGC not available, trying serial...")
+        else:
+            await tgc_reader()
+            return
 
         # Try serial
         target_port = port or _auto_detect_port()
