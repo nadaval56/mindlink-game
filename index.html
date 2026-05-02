@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧠 Mind Runner</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0a0a0a;
+  color: #00f5ff;
+  font-family: 'Press Start 2P', monospace;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+#wrapper {
+  position: relative;
+  width: 800px;
+  max-width: 100vw;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  image-rendering: pixelated;
+  border: 2px solid #00f5ff44;
+  box-shadow: 0 0 30px #00f5ff22;
+}
+
+/* ── screens ────────────────────────────────────────── */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: #0a0a0aee;
+  z-index: 10;
+}
+.screen.hidden { display: none; }
+
+.title { font-size: 20px; color: #00f5ff; text-shadow: 0 0 12px #00f5ffaa; }
+.subtitle { font-size: 9px; color: #ffffff88; }
+.label { font-size: 8px; color: #aaaaaa; }
+.value-big { font-size: 22px; color: #00f5ff; }
+
+/* pulse animation */
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.pulse { animation: pulse 1.2s ease-in-out infinite; }
+
+/* eye blink animation */
+@keyframes blink-anim {
+  0%,90%,100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.05); }
+}
+.blink-eye {
+  font-size: 32px;
+  display: inline-block;
+  animation: blink-anim 2.5s ease-in-out infinite;
+}
+
+/* signal bar */
+.signal-bar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.signal-seg {
+  width: 12px; height: 16px;
+  background: #00f5ff;
+  border-radius: 2px;
+  opacity: 0.2;
+}
+.signal-seg.active { opacity: 1; }
+
+/* blink flash overlay */
+#blink-flash {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 20;
+  transition: opacity 0.02s;
+}
+
+/* demo banner */
+#demo-banner {
+  position: absolute;
+  top: 8px; right: 8px;
+  font-size: 7px;
+  color: #ffcc00;
+  background: #ffcc0022;
+  border: 1px solid #ffcc0066;
+  padding: 4px 8px;
+  display: none;
+  z-index: 15;
+}
+#demo-banner.show { display: block; }
+
+/* shake */
+@keyframes shake {
+  0%  { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  50% { transform: translateX(6px); }
+  75% { transform: translateX(-4px); }
+  100%{ transform: translateX(0); }
+}
+.shaking { animation: shake 0.15s linear 3; }
+</style>
+</head>
+<body>
+<div id="wrapper">
+  <canvas id="c" width="800" height="400"></canvas>
+
+  <!-- blink flash -->
+  <div id="blink-flash"></div>
+  <!-- demo banner (shown during game) -->
+  <div id="demo-banner">★ DEMO MODE</div>
+
+  <!-- SCREEN 1: connect -->
+  <div class="screen" id="screen-connect">
+    <div class="title">🧠 MIND RUNNER</div>
+    <div class="pulse label">מחפש Mind Link...</div>
+    <div class="label" style="color:#555">מתחבר ל-bridge.py על localhost:8765</div>
+    <div id="connect-status" class="label" style="color:#ffcc00"></div>
+  </div>
+
+  <!-- SCREEN 2: ready -->
+  <div class="screen hidden" id="screen-ready">
+    <div class="title">מוכן! 🧠✅</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div class="label">Signal:</div>
+      <div class="signal-bar" id="signal-bar">
+        <div class="signal-seg" id="sig0"></div>
+        <div class="signal-seg" id="sig1"></div>
+        <div class="signal-seg" id="sig2"></div>
+        <div class="signal-seg" id="sig3"></div>
+        <div class="signal-seg" id="sig4"></div>
+        <div class="signal-seg" id="sig5"></div>
+        <div class="signal-seg" id="sig6"></div>
+        <div class="signal-seg" id="sig7"></div>
+        <div id="sig-label" class="label" style="margin-left:8px">GOOD</div>
+      </div>
+      <div class="label">Attention: <span id="ready-attention">--</span></div>
+    </div>
+    <div class="blink-eye">👁</div>
+    <div class="label pulse">מצמץ כדי להתחיל</div>
+  </div>
+
+  <!-- SCREEN 3: game (canvas is the game, HUD overlaid via canvas) -->
+
+  <!-- SCREEN 4: game over -->
+  <div class="screen hidden" id="screen-gameover">
+    <div class="title" style="color:#ff4444">GAME OVER</div>
+    <div class="label">Score: <span id="go-score">00000</span></div>
+    <div class="label">Max Attention: <span id="go-max-att">0</span>%</div>
+    <div class="label">Blinks used: <span id="go-blinks">0</span></div>
+    <div class="blink-eye" style="margin-top:12px">👁</div>
+    <div class="label pulse">מצמץ להתחיל מחדש</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── canvas / ctx ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 800, H = 400;
+const GROUND_Y = 330;   // y of ground surface
+
+// ── screens ───────────────────────────────────────────────────────────────
+const screens = {
+  connect:  document.getElementById('screen-connect'),
+  ready:    document.getElementById('screen-ready'),
+  gameover: document.getElementById('screen-gameover'),
+};
+function showScreen(name) {
+  Object.values(screens).forEach(s => s.classList.add('hidden'));
+  if (name) screens[name].classList.remove('hidden');
+}
+showScreen('connect');
+
+// ── EEG state ─────────────────────────────────────────────────────────────
+const eeg = { attention: 0, meditation: 0, blink: 0, signal: 200, connected: false };
+let demoMode = false;
+
+// demo synthesizer (JS side, used when WS unavailable)
+const _demoT0 = performance.now();
+let _nextBlink = performance.now() + (4000 + Math.random() * 4000);
+function _updateDemo() {
+  const t = (performance.now() - _demoT0) / 1000;
+  eeg.attention = Math.round(65 + 25 * Math.sin(2 * Math.PI * t / 10) + (Math.random() * 6 - 3));
+  eeg.attention = Math.max(0, Math.min(100, eeg.attention));
+  eeg.meditation = Math.round(50 + 15 * Math.sin(2 * Math.PI * t / 15));
+  eeg.signal = 0;
+  eeg.connected = false;
+  const now = performance.now();
+  if (now >= _nextBlink) {
+    eeg.blink = 80 + Math.floor(Math.random() * 100);
+    _nextBlink = now + 4000 + Math.random() * 4000;
+  } else {
+    eeg.blink = 0;
+  }
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────
+let ws = null;
+let wsConnected = false;
+const connectStatus = document.getElementById('connect-status');
+const DEMO_FALLBACK_MS = 5000;
+let _demoTimer = null;
+
+function startDemoFallback() {
+  if (demoMode) return;
+  _demoTimer = setTimeout(() => {
+    demoMode = true;
+    document.getElementById('demo-banner').classList.add('show');
+    connectStatus.textContent = 'לא מצא bridge — מצב Demo';
+    goToReady();
+  }, DEMO_FALLBACK_MS);
+}
+
+function connectWS() {
+  try {
+    ws = new WebSocket('ws://localhost:8765');
+  } catch(e) { return; }
+
+  ws.onopen = () => {
+    wsConnected = true;
+    clearTimeout(_demoTimer);
+    connectStatus.textContent = '';
+    goToReady();
+  };
+  ws.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+      eeg.attention  = d.attention  ?? eeg.attention;
+      eeg.meditation = d.meditation ?? eeg.meditation;
+      eeg.blink      = d.blink      ?? 0;
+      eeg.signal     = d.signal     ?? 200;
+      eeg.connected  = d.connected  ?? false;
+      if (!d.connected) document.getElementById('demo-banner').classList.add('show');
+      else document.getElementById('demo-banner').classList.remove('show');
+    } catch(err) {}
+  };
+  ws.onclose = ws.onerror = () => {
+    wsConnected = false;
+    if (!demoMode) setTimeout(connectWS, 2000);
+  };
+}
+
+startDemoFallback();
+connectWS();
+
+// ── game state ────────────────────────────────────────────────────────────
+let gameState = 'connect'; // 'connect' | 'ready' | 'playing' | 'gameover'
+let score = 0;
+let speed = 5;
+let maxAttention = 0;
+let blinksUsed = 0;
+let frameCount = 0;
+
+// player
+const player = {
+  x: 120, y: GROUND_Y,
+  vy: 0,
+  isJumping: false,
+  jumpCooldown: 0,
+  trailFrames: [],
+};
+const PLAYER_W = 40, PLAYER_H = 50;
+const THRESH = 65; // attention threshold
+
+// obstacles
+let obstacles = [];
+let nextObstacleIn = 0; // frames
+
+// particles
+let particles = [];
+
+// shake
+let shakeDur = 0;
+
+// stars (parallax layers)
+const stars = [
+  Array.from({length: 60}, () => ({ x: Math.random()*W, y: Math.random()*GROUND_Y*0.9, r: 1 })),
+  Array.from({length: 30}, () => ({ x: Math.random()*W, y: Math.random()*GROUND_Y*0.9, r: 1.5 })),
+  Array.from({length: 15}, () => ({ x: Math.random()*W, y: Math.random()*GROUND_Y*0.9, r: 2 })),
+];
+const starSpeeds = [0.3, 0.7, 1.2];
+
+// blink cooldown
+let blinkCooldown = 0; // ms
+let lastBlink = 0;
+
+// ── screen transitions ────────────────────────────────────────────────────
+function goToReady() {
+  gameState = 'ready';
+  showScreen('ready');
+  updateReadyScreen();
+}
+
+function startGame() {
+  gameState = 'playing';
+  showScreen(null); // hide all screens
+  score = 0; speed = 5; maxAttention = 0; blinksUsed = 0; frameCount = 0;
+  player.y = GROUND_Y; player.vy = 0; player.isJumping = false;
+  player.jumpCooldown = 0; player.trailFrames = [];
+  obstacles = []; nextObstacleIn = 90;
+  particles = []; shakeDur = 0;
+  blinkCooldown = 0;
+}
+
+function endGame() {
+  gameState = 'gameover';
+  document.getElementById('go-score').textContent = String(score).padStart(5,'0');
+  document.getElementById('go-max-att').textContent = maxAttention;
+  document.getElementById('go-blinks').textContent = blinksUsed;
+  showScreen('gameover');
+  triggerShake();
+}
+
+// ── ready screen updater ──────────────────────────────────────────────────
+function updateReadyScreen() {
+  document.getElementById('ready-attention').textContent = eeg.attention;
+  const good = eeg.signal < 50;
+  const segs = 8;
+  const active = good ? segs : Math.floor((1 - eeg.signal/200) * segs);
+  for (let i = 0; i < segs; i++) {
+    document.getElementById('sig'+i).classList.toggle('active', i < active);
+  }
+  document.getElementById('sig-label').textContent = good ? 'GOOD' : 'POOR';
+}
+
+// ── blink flash ───────────────────────────────────────────────────────────
+const blinkFlash = document.getElementById('blink-flash');
+function triggerBlinkFlash() {
+  blinkFlash.style.opacity = '0.7';
+  setTimeout(() => { blinkFlash.style.opacity = '0'; }, 80);
+}
+
+// ── shake ─────────────────────────────────────────────────────────────────
+const wrapper = document.getElementById('wrapper');
+function triggerShake() {
+  wrapper.classList.remove('shaking');
+  void wrapper.offsetWidth;
+  wrapper.classList.add('shaking');
+  setTimeout(() => wrapper.classList.remove('shaking'), 500);
+}
+
+// ── drawing helpers ───────────────────────────────────────────────────────
+
+function drawStars(dt) {
+  stars.forEach((layer, li) => {
+    ctx.fillStyle = li === 0 ? '#ffffff55' : li === 1 ? '#ffffff99' : '#ffffffcc';
+    layer.forEach(s => {
+      if (gameState === 'playing') s.x -= starSpeeds[li] * (speed / 5);
+      if (s.x < 0) s.x = W;
+      ctx.fillRect(Math.round(s.x), Math.round(s.y), stars[li][0].r*2|0, stars[li][0].r*2|0);
+    });
+  });
+}
+
+function drawGround() {
+  // ground strip
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  // scanline
+  ctx.fillStyle = '#00f5ff33';
+  ctx.fillRect(0, GROUND_Y, W, 2);
+}
+
+function attentionColor(a) {
+  if (a >= 65) return '#00f5ff';
+  if (a >= 40) return '#ffcc00';
+  return '#ff4444';
+}
+
+// pixel-art astronaut
+function drawAstronaut(x, y, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const focused = eeg.attention >= THRESH;
+  const body = focused ? '#00f5ff' : '#ff4444';
+  const glow = focused && eeg.attention > 80;
+
+  if (glow) {
+    ctx.shadowColor = '#00f5ff';
+    ctx.shadowBlur = 16;
+  }
+
+  const px = Math.round(x - PLAYER_W/2);
+  const py = Math.round(y - PLAYER_H);
+
+  // helmet
+  ctx.fillStyle = body;
+  ctx.fillRect(px+8, py, 24, 18);
+  // visor
+  ctx.fillStyle = focused ? '#003344' : '#440011';
+  ctx.fillRect(px+12, py+4, 16, 10);
+  // visor shine
+  ctx.fillStyle = focused ? '#00aabb' : '#aa2233';
+  ctx.fillRect(px+14, py+5, 5, 3);
+  // body
+  ctx.fillStyle = body;
+  ctx.fillRect(px+6, py+18, 28, 22);
+  // legs
+  ctx.fillRect(px+8,  py+40, 10, 10);
+  ctx.fillRect(px+22, py+40, 10, 10);
+  // arms
+  ctx.fillRect(px,    py+20, 8, 14);
+  ctx.fillRect(px+32, py+20, 8, 14);
+  // backpack antenna
+  ctx.fillStyle = '#ffffff66';
+  ctx.fillRect(px+32, py+15, 4, 8);
+
+  ctx.restore();
+}
+
+function drawPlayer() {
+  // trail
+  player.trailFrames.forEach((tf, i) => {
+    const alpha = (i+1) / player.trailFrames.length * 0.35;
+    drawAstronaut(tf.x, tf.y, alpha);
+  });
+  drawAstronaut(player.x, player.y, 1);
+}
+
+function drawObstacles() {
+  obstacles.forEach(o => {
+    if (o.type === 'low') {
+      // rock
+      ctx.fillStyle = '#4a4e69';
+      ctx.fillRect(Math.round(o.x), GROUND_Y - o.h, o.w, o.h);
+      // highlight
+      ctx.fillStyle = '#6a6e89';
+      ctx.fillRect(Math.round(o.x), GROUND_Y - o.h, o.w, 4);
+      ctx.fillRect(Math.round(o.x), GROUND_Y - o.h, 4, o.h);
+    } else {
+      // tall wall with gap at bottom
+      const gapH = 60;
+      const wallH = H - GROUND_Y + o.h - gapH; // top part height
+      // top part
+      ctx.fillStyle = '#f72585';
+      ctx.fillRect(Math.round(o.x), 0, o.w, o.h - gapH);
+      // glow
+      ctx.shadowColor = '#f72585';
+      ctx.shadowBlur = 10;
+      ctx.fillRect(Math.round(o.x), 0, o.w, o.h - gapH);
+      ctx.shadowBlur = 0;
+      // warning stripes
+      ctx.fillStyle = '#ff000044';
+      for (let s = 0; s < o.h - gapH; s += 20) {
+        ctx.fillRect(Math.round(o.x), s, o.w, 10);
+      }
+    }
+  });
+}
+
+function drawHUD() {
+  const att = eeg.attention;
+  const color = attentionColor(att);
+
+  // ── score ──
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '14px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.fillText('SCORE: ' + String(score).padStart(5,'0'), W/2, 28);
+
+  // ── attention bar (bottom left) ──
+  const barX = 16, barY = H - 42, barW = 200, barH = 18;
+  // background
+  ctx.fillStyle = '#222244';
+  ctx.fillRect(barX, barY, barW, barH);
+  // fill
+  const fillW = Math.round(barW * att / 100);
+  const grad = ctx.createLinearGradient(barX, 0, barX+barW, 0);
+  grad.addColorStop(0,    '#ff4444');
+  grad.addColorStop(0.4,  '#ffcc00');
+  grad.addColorStop(0.65, '#00f5ff');
+  grad.addColorStop(1,    '#00f5ff');
+  ctx.fillStyle = grad;
+  ctx.fillRect(barX, barY, fillW, barH);
+  // threshold line
+  const threshX = barX + Math.round(barW * THRESH/100);
+  ctx.fillStyle = '#ffcc00';
+  ctx.setLineDash([3,3]);
+  ctx.beginPath();
+  ctx.moveTo(threshX, barY - 4);
+  ctx.lineTo(threshX, barY + barH + 4);
+  ctx.strokeStyle = '#ffcc00';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // border
+  ctx.strokeStyle = '#ffffff33';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX, barY, barW, barH);
+  // attention value above bar
+  ctx.fillStyle = color;
+  ctx.font = '10px "Press Start 2P"';
+  ctx.textAlign = 'left';
+  ctx.fillText('🧠 ' + att + '%', barX, barY - 6);
+
+  // ── blink indicator (bottom right) ──
+  const now = performance.now();
+  const cdLeft = Math.max(0, blinkCooldown - now);
+  ctx.font = '9px "Press Start 2P"';
+  ctx.textAlign = 'right';
+  if (cdLeft > 0) {
+    ctx.fillStyle = '#ffffff44';
+    ctx.fillText('👁  ' + (cdLeft/1000).toFixed(1) + 's', W - 16, H - 24);
+  } else {
+    // slow flash
+    ctx.fillStyle = Math.floor(now/600) % 2 === 0 ? '#00f5ff' : '#ffffff88';
+    ctx.fillText('👁  BLINK READY', W - 16, H - 24);
+  }
+
+  // ── signal dot ──
+  ctx.beginPath();
+  ctx.arc(W - 16, 16, 5, 0, Math.PI*2);
+  ctx.fillStyle = eeg.signal < 50 ? '#00ff88' : '#ff4444';
+  ctx.fill();
+  ctx.font = '7px "Press Start 2P"';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = eeg.signal < 50 ? '#00ff88' : '#ff4444';
+  ctx.fillText(eeg.signal < 50 ? 'GOOD' : 'POOR', W - 24, 20);
+}
+
+// ── particles ─────────────────────────────────────────────────────────────
+function spawnPassParticles(x, y) {
+  for (let i = 0; i < 18; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed2 = 1 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed2,
+      vy: Math.sin(angle) * speed2,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.04,
+      color: '#00ff88',
+    });
+  }
+}
+
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.1;
+    p.life -= p.decay;
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(Math.round(p.x), Math.round(p.y), 4, 4);
+    ctx.globalAlpha = 1;
+  });
+}
+
+// ── collision ─────────────────────────────────────────────────────────────
+function checkCollision(o) {
+  const px1 = player.x - PLAYER_W/2 + 4;
+  const px2 = player.x + PLAYER_W/2 - 4;
+  const py1 = player.y - PLAYER_H + 4;
+  const py2 = player.y - 4;
+
+  if (o.type === 'low') {
+    const ox1 = o.x, ox2 = o.x + o.w;
+    const oy1 = GROUND_Y - o.h, oy2 = GROUND_Y;
+    return px2 > ox1 && px1 < ox2 && py2 > oy1 && py1 < oy2;
+  } else {
+    // wall: top portion from y=0 to y=(o.h - 60)
+    const ox1 = o.x, ox2 = o.x + o.w;
+    const oy2 = o.h - 60;
+    return px2 > ox1 && px1 < ox2 && py1 < oy2;
+  }
+}
+
+// ── main game loop ────────────────────────────────────────────────────────
+let lastTime = 0;
+
+function gameLoop(ts) {
+  requestAnimationFrame(gameLoop);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // background
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars();
+  drawGround();
+
+  if (gameState === 'connect' || gameState === 'ready') {
+    // just draw background; HTML screens are on top
+    if (demoMode) _updateDemo();
+    if (gameState === 'ready') updateReadyScreen();
+    lastTime = ts;
+    return;
+  }
+
+  if (gameState === 'gameover') {
+    lastTime = ts;
+    return;
+  }
+
+  // ── playing ──────────────────────────────────────────────────────────
+  if (demoMode) _updateDemo();
+  frameCount++;
+
+  const att = eeg.attention;
+  if (att > maxAttention) maxAttention = att;
+
+  // speed increase
+  speed = Math.min(12, 5 + Math.floor(score / 500) * 0.1);
+  score += 1;
+
+  // player Y target based on attention
+  const targetY = att >= THRESH
+    ? GROUND_Y - 80
+    : GROUND_Y;
+
+  // jump
+  const now = performance.now();
+  if (eeg.blink > 30 && now > blinkCooldown) {
+    // consume blink
+    eeg.blink = 0;
+    player.vy = -18;
+    player.isJumping = true;
+    blinkCooldown = now + 1500;
+    blinksUsed++;
+    triggerBlinkFlash();
+  }
+
+  if (player.isJumping) {
+    player.vy += 1.2; // gravity
+    player.y += player.vy;
+    const landY = att >= THRESH ? GROUND_Y - 80 : GROUND_Y;
+    if (player.y >= landY) {
+      player.y = landY;
+      player.vy = 0;
+      player.isJumping = false;
+    }
+  } else {
+    // lerp to target
+    player.y += (targetY - player.y) * 0.05;
+  }
+
+  // trail
+  player.trailFrames.unshift({ x: player.x, y: player.y });
+  if (player.trailFrames.length > 5) player.trailFrames.pop();
+  if (!player.isJumping) player.trailFrames = []; // only during jumps
+
+  // spawn obstacles
+  nextObstacleIn--;
+  if (nextObstacleIn <= 0) {
+    const isHigh = Math.random() < 0.3; // 30% chance tall wall
+    if (isHigh) {
+      obstacles.push({ type: 'high', x: W, w: 30, h: 120 });
+      nextObstacleIn = Math.round((6 + Math.random() * 4) * 60);
+    } else {
+      obstacles.push({ type: 'low', x: W, w: 35, h: 45 });
+      nextObstacleIn = Math.round((2.5 + Math.random() * 1.5) * 60);
+    }
+  }
+
+  // move & check obstacles
+  let collided = false;
+  let passed = [];
+  obstacles = obstacles.filter(o => {
+    o.x -= speed;
+    if (o.x + o.w < player.x - PLAYER_W/2 && !o.passed) {
+      o.passed = true;
+      passed.push(o);
+    }
+    if (checkCollision(o)) { collided = true; }
+    return o.x + o.w > -10;
+  });
+
+  passed.forEach(o => spawnPassParticles(player.x + 30, player.y - PLAYER_H/2));
+
+  drawObstacles();
+  drawPlayer();
+  updateParticles();
+  drawHUD();
+
+  if (collided) {
+    endGame();
+  }
+
+  lastTime = ts;
+}
+
+// ── input: keyboard fallback for testing ─────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (gameState === 'ready') { startGame(); return; }
+    if (gameState === 'gameover') { startGame(); return; }
+    if (gameState === 'playing') {
+      eeg.blink = 100; // simulate blink
+    }
+  }
+  if (e.code === 'ArrowUp') {
+    eeg.attention = Math.min(100, eeg.attention + 10);
+  }
+  if (e.code === 'ArrowDown') {
+    eeg.attention = Math.max(0, eeg.attention - 10);
+  }
+});
+
+// ── blink detection for screens ───────────────────────────────────────────
+function checkScreenBlink() {
+  if (eeg.blink > 30) {
+    if (gameState === 'ready') { eeg.blink = 0; startGame(); return; }
+    if (gameState === 'gameover') { eeg.blink = 0; startGame(); return; }
+  }
+}
+
+// poll blink for screen transitions (10fps)
+setInterval(checkScreenBlink, 100);
+
+// ── start ─────────────────────────────────────────────────────────────────
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
