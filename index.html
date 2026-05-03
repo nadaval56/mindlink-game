@@ -218,6 +218,7 @@ function _updateDemo() {
 // ── WebSocket ─────────────────────────────────────────────────────────────
 let ws = null;
 let wsConnected = false;
+let _wsLastMsg = null; // debug: last received message
 const connectStatus = document.getElementById('connect-status');
 const DEMO_FALLBACK_MS = 5000;
 let _demoTimer = null;
@@ -251,6 +252,7 @@ function connectWS() {
       eeg.blink      = d.blink      ?? 0;
       eeg.signal     = d.signal     ?? 200;
       eeg.connected  = d.connected  ?? false;
+      _wsLastMsg = d; // debug
       if (!d.connected) document.getElementById('demo-banner').classList.add('show');
       else document.getElementById('demo-banner').classList.remove('show');
     } catch(err) {}
@@ -554,6 +556,16 @@ function drawHUD() {
   ctx.textAlign = 'right';
   ctx.fillStyle = eeg.signal < 50 ? '#00ff88' : '#ff4444';
   ctx.fillText(eeg.signal < 50 ? 'GOOD' : 'POOR', W - 24, 20);
+
+  // ── debug overlay ──
+  ctx.font = '7px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffff0088';
+  const wsStatus = wsConnected ? 'WS:OK' : (demoMode ? 'WS:DEMO' : 'WS:---');
+  const rawMsg = _wsLastMsg
+    ? `att=${_wsLastMsg.attention} sig=${_wsLastMsg.signal} bl=${_wsLastMsg.blink}`
+    : 'no msg yet';
+  ctx.fillText(wsStatus + '  ' + rawMsg, 16, H - 10);
 }
 
 // ── particles ─────────────────────────────────────────────────────────────
