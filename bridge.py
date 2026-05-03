@@ -40,6 +40,31 @@ state = {
 }
 _blink_latch = 0
 
+# Raw EEG spike-based blink detection
+_raw_history    = []
+_RAW_WINDOW     = 20    # samples to keep
+_RAW_THRESH     = 1200  # spike amplitude threshold
+_blink_cooldown = 0.0
+
+def _detect_blink_from_raw(raw_val: int) -> None:
+    """Detect blink from raw EEG spikes when device doesn't send 0x16."""
+    global _blink_latch, _blink_cooldown
+    if raw_val > 32767:
+        raw_val -= 65536
+    _raw_history.append(abs(raw_val))
+    if len(_raw_history) > _RAW_WINDOW:
+        _raw_history.pop(0)
+    if len(_raw_history) < _RAW_WINDOW:
+        return
+    baseline = sorted(_raw_history)[len(_raw_history) // 2]
+    peak     = max(_raw_history)
+    now      = time.time()
+    if peak > _RAW_THRESH and peak > baseline * 4 and now > _blink_cooldown:
+        _blink_latch    = min(255, int(peak / 10))
+        _blink_cooldown = now + 1.5
+        log.info("Blink (spike) detected: peak=%d baseline=%d strength=%d",
+                 peak, baseline, _blink_latch)
+
 # ── ThinkGear packet parser ───────────────────────────────────────────────────
 
 SYNC = 0xAA
@@ -54,7 +79,10 @@ def _parse_payload(payload: bytes) -> None:
         if code >= 0x80:          # multi-byte value
             if i >= len(payload): break
             vlen = payload[i]; i += 1
-            i += vlen             # skip (raw EEG / EEG power — not needed)
+            val_bytes = payload[i:i+vlen]; i += vlen
+            if code == 0x80 and vlen == 2:  # raw EEG — use for blink detection
+                raw = (val_bytes[0] << 8) | val_bytes[1]
+                _detect_blink_from_raw(raw)
         else:                     # single-byte value
             if i >= len(payload): break
             val = payload[i]; i += 1

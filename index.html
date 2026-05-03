@@ -285,7 +285,7 @@ const player = {
   trailFrames: [],
 };
 const PLAYER_W = 40, PLAYER_H = 50;
-const THRESH = 65; // attention threshold
+let THRESH = 50; // attention threshold — adjustable with [ and ]
 
 // obstacles
 let obstacles = [];
@@ -532,6 +532,9 @@ function drawHUD() {
   ctx.font = '10px "Press Start 2P"';
   ctx.textAlign = 'left';
   ctx.fillText('🧠 ' + att + '%', barX, barY - 6);
+  ctx.fillStyle = '#ffcc0099';
+  ctx.font = '7px "Press Start 2P"';
+  ctx.fillText('סף: ' + THRESH + '%  [ ]', barX + 140, barY - 6);
 
   // ── blink indicator (bottom right) ──
   const now = performance.now();
@@ -746,6 +749,12 @@ document.addEventListener('keydown', e => {
   }
   if (e.code === 'ArrowDown') {
     eeg.attention = Math.max(0, eeg.attention - 10);
+  }
+  if (e.code === 'BracketRight') { // ] = raise threshold
+    THRESH = Math.min(90, THRESH + 5);
+  }
+  if (e.code === 'BracketLeft') { // [ = lower threshold
+    THRESH = Math.max(20, THRESH - 5);
   }
 });
 
